@@ -1,0 +1,152 @@
+/*
+ * ---------------------
+ * Title: Simple Digital Calculator using Curiosity Board and LED Lights
+ * ---------------------
+ * Program Details:
+ * The purpose of this program is to make a Digital Calculator using Pic18,
+ * C-Programming, and Keypad.
+ * Inputs: X_Input_REG and Y_Input_REG, 
+ * each input is a number between 1 - 9
+ * Outputs: Display_Result_REG
+
+ * Configuration Header File 
+ * Compiler: xc8, 3.0
+ * Author: Gilberto Cornejo
+ * Versions:
+ *      V1.0: Initial draft with keypad input handling and basic LED output.
+ *      V1.1: Added binary result display using PORTD LEDs.
+ *      V1.2: Changed how the arithmetic operations worked (Add, Subtract, Multiply, Divide).
+ */
+
+#include <xc.h> 
+#include "C:/Program Files/Microchip/xc8/v3.00/pic/include/proc/pic18f47k42.h"
+#include "pragmaconfig.h" 
+
+#define _XTAL_FREQ 4000000 
+#define FCY    _XTAL_FREQ/4
+
+ //Defines rows and columns for 4x4 keypad
+#define R0 LATBbits.LATB0
+#define R1 LATBbits.LATB1
+#define R2 LATBbits.LATB2
+#define R3 LATBbits.LATB3
+#define C0 PORTBbits.RB4
+#define C1 PORTBbits.RB5
+#define C2 PORTBbits.RB6
+#define C3 PORTBbits.RB7
+
+// Keypad map
+const char keymap[4][4] = {
+    {'1', '2', '3', '+'},
+    {'4', '5', '6', '-'},
+    {'7', '8', '9', '*'},
+    {'C', '0', '=', '/'}
+};
+
+// Program Variables
+char scan_keypad(void);
+int get_num  (char ch);
+void keypad_init(void);
+
+unsigned char X_Input_REG = 0; //First number
+unsigned char Y_Input_REG = 0; //Second number
+char op = '\0'; //Operation
+char state = 0;  // 0 = entering num1, 1 = op, 2 = num2
+
+void main(void) {
+    keypad_init();
+
+    TRISD = 0x00;     // Initialize ports. PORTD = output
+    ANSELD = 0x00;
+    LATD = 0x00;
+   
+   
+
+    while (1) {
+        char Operation_REG = scan_keypad(); //Check keypad for input
+
+        if (Operation_REG != '\0') { //Checks if the variable Operation_REG does not equal the null character ('\0').
+            __delay_ms(300);  // delay
+
+            if (Operation_REG >= '0' && Operation_REG <= '9') { //Checks to make sure inputs is within range
+                int digit = Operation_REG - '0'; //Converts the character value stored in Operation_REG into an integer
+                if (state == 0) { //If state(input) changes, do this
+                    X_Input_REG = X_Input_REG * 10 + digit;//Allows user to input first 2 digit number
+                    LATD = X_Input_REG ;//Displays value. 
+                } else if (state == 2) { //If state(input) changes, do this
+                    Y_Input_REG = Y_Input_REG * 10 + digit; //Allows user to input second 2 digit number
+                    LATD = Y_Input_REG;//Displays value.
+                }
+            }
+            // Check if Operation_REG contains one of the arithmetic operation symbols
+            else if (Operation_REG == '+' || Operation_REG == '-' || Operation_REG == '*' || Operation_REG == '/') {
+                if (state == 0) {  // If we're currently in state 0 (meaning num1 has been entered, waiting for an operation)
+                    op = Operation_REG ; //Store operation in 'op'
+                    state = 2;  // Move to state 2, where the user will enter the second number (num2)
+                    LATD = 0x00;  // Clear display
+                }
+            }
+
+            else if (Operation_REG == '=') { 
+                signed char Display_Result_REG = 0; // 'signed char' allows storing both positive and negative 8-bit values (-128 to +127)
+                                                    // Variable to store the result of the operation
+                switch (op) {  // Perform the appropriate operation based on the stored operator (op)
+                    case '+': Display_Result_REG = X_Input_REG + Y_Input_REG; break; // Addition
+                    case '-': Display_Result_REG = X_Input_REG - Y_Input_REG; break; // Subtraction
+                    case '*': Display_Result_REG = X_Input_REG * Y_Input_REG; break; // Multiplication
+                    case '/': if (Y_Input_REG != 0) { // Division.Check for divide-by-zero to avoid crash. 
+                                    Display_Result_REG = X_Input_REG / Y_Input_REG;
+                              } else {
+                                  Display_Result_REG = 0;
+                              }break; 
+                    default: Display_Result_REG = 0; break; // If no valid operator was selected, default the result to 0
+                }
+
+                LATD = Display_Result_REG;  // Shows 2's complement if negative
+
+                // Reset for next input
+                X_Input_REG = 0; Y_Input_REG = 0; op = '\0'; state = 0;
+                __delay_ms(2000);
+                //LATD = 0x00;
+}
+
+            else if (Operation_REG == 'C') { // Reset everything
+                X_Input_REG = 0; Y_Input_REG = 0; op = '\0'; state = 0;
+                LATD = 0x00;
+            }
+        }
+    }
+}
+
+// Scan function for pull-downs (active-high key press)
+char scan_keypad() {
+    for (int row = 0; row < 4; row++) {
+        // Set all rows LOW
+        R0 = R1 = R2 = R3 = 0;
+
+        // Drive current row HIGH
+        switch (row) {
+            case 0: R0 = 1; break;
+            case 1: R1 = 1; break;
+            case 2: R2 = 1; break;
+            case 3: R3 = 1; break;
+        }
+
+        __delay_ms(5); // delayw
+
+        if (C0 == 1) { while (C0 == 1); return keymap[row][0]; }
+        if (C1 == 1) { while (C1 == 1); return keymap[row][1]; }
+        if (C2 == 1) { while (C2 == 1); return keymap[row][2]; }
+        if (C3 == 1) { while (C3 == 1); return keymap[row][3]; }
+    }
+
+    return '\0'; // No key pressed
+}
+
+// Function to initialize keypad pins
+void keypad_init() {
+    TRISB = 0b11110000;   // RB0:RB3 = output (rows), RB4:RB7 = input (columns)
+    LATB = 0x00;          // Set all rows high initially
+    ANSELB = 0x00;        // Digital mode for PORTB
+   
+}
